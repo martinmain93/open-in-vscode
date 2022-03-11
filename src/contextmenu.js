@@ -18,7 +18,7 @@ function getOptions() {
 }
 
 function getVscodeLink({
-    repo, file, isFolder, line,
+    file, isFolder, line,
 }) {
     return getOptions()
         .then(({ insidersBuild, basePath, debug }) => {
@@ -33,7 +33,7 @@ function getVscodeLink({
                 vscodeLink += '/';
             }
 
-            vscodeLink += `${basePath}/${repo}/${file}`;
+            vscodeLink += `${basePath}/${file}`;
 
             // opening a folder and not a file
             if (isFolder) {
@@ -56,22 +56,45 @@ function isPR(linkUrl) {
     return PULL_REQUEST_PATH_REGEXP.test(linkUrl);
 }
 
+const SENTRY_RE = /([\w./-]+) [\w\s]+ at line (\d+)/g
+
 function parseLink(linkUrl, selectionText, pageUrl) {
     return new Promise((resolve, reject) => {
+        var line;
+        var file = selectionText;
+        if (!linkUrl) {
+            
+            var split = selectionText.split(":")
+            if (split.length > 1) {
+                file = split[0]
+                line = split[1]
+            } else {
+                var allMatches = [...selectionText.matchAll(SENTRY_RE)][0]
+                if (allMatches.length > 2) {
+                    file = allMatches[1]
+                    line = allMatches[2]
+                }
+            }
+
+            resolve({
+                file,
+                isFolder: false,
+                line,
+            });
+        }
+
         const url = new URL(linkUrl);
         const path = url.pathname;
 
         if (isPR(url.pathname)) {
             const pathInfo = PULL_REQUEST_PATH_REGEXP.exec(path);
-            const repo = pathInfo[1];
             const isFolder = false;
-            const file = selectionText;
+            file = selectionText;
             let line = null;
             if (pageUrl.includes(linkUrl)) {
                 line = pageUrl.replace(linkUrl, '').replace('R', '').replace('L', '');
             }
             resolve({
-                repo,
                 file,
                 isFolder,
                 line,
@@ -88,18 +111,14 @@ function parseLink(linkUrl, selectionText, pageUrl) {
 
         const pathInfo = pathRegexp.exec(path);
 
-        const repo = pathInfo[1];
         const isFolder = pathInfo[2] === 'tree';
-        const file = pathInfo[3];
-
-        let line;
+        var file = pathInfo[3];
 
         if (url.hash.indexOf('#L') === 0) {
             line = url.hash.substring(2);
         }
 
         resolve({
-            repo,
             file,
             isFolder,
             line,
@@ -116,6 +135,6 @@ function openInVscode({ linkUrl, selectionText, pageUrl }) {
 
 chrome.contextMenus.create({
     title: 'Open in VSCode',
-    contexts: ['link'],
+    contexts: ['link', 'selection'],
     onclick: openInVscode,
 });
